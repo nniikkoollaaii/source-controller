@@ -45,9 +45,15 @@ type HelmChartSpec struct {
 	// +required
 	Interval metav1.Duration `json:"interval"`
 
-	// Alternative values file to use as the default chart values, expected to be a
-	// relative path in the SourceRef. Ignored when omitted.
+	// Alternative list of values files to use as the default chart values,
+	// expected to be a relative path in the SourceRef. Ignored when omitted.
 	// +optional
+	ValuesFiles []string `json:"valuesFiles,omitempty"`
+
+	// Alternative single values file to use as the default chart values, expected
+	// to be a relative path in the SourceRef. Ignored when omitted. Deprecated.
+	// +optional
+	// +deprecated
 	ValuesFile string `json:"valuesFile,omitempty"`
 
 	// This flag tells the controller to suspend the reconciliation of this source.

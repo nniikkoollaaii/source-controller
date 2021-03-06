@@ -91,9 +91,17 @@ spec:
                   of this source.
                 type: boolean
               valuesFile:
-                description: Alternative values file to use as the default chart values,
-                  expected to be a relative path in the SourceRef. Ignored when omitted.
+                description: Alternative single values file to use as the default
+                  chart values, expected to be a relative path in the SourceRef. Ignored
+                  when omitted. Deprecated.
                 type: string
+              valuesFiles:
+                description: Alternative list of values files to use as the default
+                  chart values, expected to be a relative path in the SourceRef. Ignored
+                  when omitted.
+                items:
+                  type: string
+                type: array
               version:
                 default: '*'
                 description: The chart version semver expression, ignored for charts
