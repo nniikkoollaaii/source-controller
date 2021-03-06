@@ -22,7 +22,6 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -49,11 +48,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/yaml"
 
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/events"
 	"github.com/fluxcd/pkg/runtime/metrics"
 	"github.com/fluxcd/pkg/runtime/predicates"
+	"github.com/fluxcd/pkg/runtime/transform"
 	"github.com/fluxcd/pkg/untar"
 
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta1"
@@ -377,10 +378,12 @@ func (r *HelmChartReconciler) reconcileFromHelmRepository(ctx context.Context,
 		readyMessage = fmt.Sprintf("Fetched revision: %s", newArtifact.Revision)
 	)
 	switch {
-	case chart.Spec.ValuesFile != "" && chart.Spec.ValuesFile != chartutil.ValuesfileName:
+	case chart.Spec.ValuesFile != "" || len(chart.Spec.ValuesFiles) > 0:
 		var (
-			tmpDir  string
-			pkgPath string
+			tmpDir      string
+			pkgPath     string
+			valuesFiles []string
+			valuesMap   map[string]interface{}
 		)
 		// Load the chart
 		helmChart, err := loader.LoadArchive(res)
@@ -389,18 +392,50 @@ func (r *HelmChartReconciler) reconcileFromHelmRepository(ctx context.Context,
 			return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
 		}
 
-		// Find override file and retrieve contents
-		var valuesData []byte
-		cfn := filepath.Clean(chart.Spec.ValuesFile)
-		for _, f := range helmChart.Files {
-			if f.Name == cfn {
-				valuesData = f.Data
-				break
+		// Prepend a list of valuesFiles with the deprecated ValuesFile key.
+		if chart.Spec.ValuesFile != "" {
+			valuesFiles = append(valuesFiles, chart.Spec.ValuesFile)
+		}
+		valuesFiles = append(valuesFiles, chart.Spec.ValuesFiles...)
+
+		for _, v := range valuesFiles {
+			srcPath, err := securejoin.SecureJoin(tmpDir, v)
+			if err != nil {
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+			if f, err := os.Stat(srcPath); os.IsNotExist(err) || !f.Mode().IsRegular() {
+				err = fmt.Errorf("invalid values file path: %s", v)
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+
+			valuesData, err := ioutil.ReadFile(srcPath)
+			if err != nil {
+				err = fmt.Errorf("failed to read from values file '%s': %w", v, err)
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+
+			yamlMap := make(map[string]interface{})
+			err = yaml.Unmarshal(valuesData, &yamlMap)
+			if err != nil {
+				err = fmt.Errorf("unmarshaling values from %s failed: %w", v, err)
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+
+			if valuesMap == nil {
+				valuesMap = yamlMap
+			} else {
+				valuesMap = transform.MergeMaps(valuesMap, yamlMap)
 			}
 		}
 
+		yamlBytes, err := yaml.Marshal(valuesMap)
+		if err != nil {
+			err = fmt.Errorf("marshaling values failed: %w", err)
+			return sourcev1.HelmChartNotReady(chart, sourcev1.ChartPackageFailedReason, err.Error()), err
+		}
+
 		// Overwrite values file
-		if changed, err := helm.OverwriteChartDefaultValues(helmChart, valuesData); err != nil {
+		if changed, err := helm.OverwriteChartDefaultValues(helmChart, yamlBytes); err != nil {
 			return sourcev1.HelmChartNotReady(chart, sourcev1.ChartPackageFailedReason, err.Error()), err
 		} else if !changed {
 			// No changes, skip to write original package to storage
@@ -505,22 +540,53 @@ func (r *HelmChartReconciler) reconcileFromTarballArtifact(ctx context.Context,
 	// or write the chart directly to storage.
 	pkgPath := chartPath
 	isValuesFileOverriden := false
-	if chart.Spec.ValuesFile != "" {
-		srcPath, err := securejoin.SecureJoin(tmpDir, chart.Spec.ValuesFile)
-		if err != nil {
-			return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+	if chart.Spec.ValuesFile != "" || len(chart.Spec.ValuesFiles) > 0 {
+		var valuesFiles []string
+		var valuesMap map[string]interface{}
+
+		// Prepend a list of valuesFiles with the deprecated ValuesFile key.
+		if chart.Spec.ValuesFile != "" {
+			valuesFiles = append(valuesFiles, chart.Spec.ValuesFile)
 		}
-		if f, err := os.Stat(srcPath); os.IsNotExist(err) || !f.Mode().IsRegular() {
-			err = fmt.Errorf("invalid values file path: %s", chart.Spec.ValuesFile)
-			return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+		valuesFiles = append(valuesFiles, chart.Spec.ValuesFiles...)
+
+		for _, v := range valuesFiles {
+			srcPath, err := securejoin.SecureJoin(tmpDir, v)
+			if err != nil {
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+			if f, err := os.Stat(srcPath); os.IsNotExist(err) || !f.Mode().IsRegular() {
+				err = fmt.Errorf("invalid values file path: %s", v)
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+
+			valuesData, err := ioutil.ReadFile(srcPath)
+			if err != nil {
+				err = fmt.Errorf("failed to read from values file '%s': %w", v, err)
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+
+			yamlMap := make(map[string]interface{})
+			err = yaml.Unmarshal(valuesData, &yamlMap)
+			if err != nil {
+				err = fmt.Errorf("unmarshaling values from %s failed: %w", v, err)
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			}
+
+			if valuesMap == nil {
+				valuesMap = yamlMap
+			} else {
+				valuesMap = transform.MergeMaps(valuesMap, yamlMap)
+			}
 		}
 
-		valuesData, err := ioutil.ReadFile(srcPath)
+		yamlBytes, err := yaml.Marshal(valuesMap)
 		if err != nil {
-			err = fmt.Errorf("failed to read from values file '%s': %w", chart.Spec.ValuesFile, err)
-			return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+			err = fmt.Errorf("marshaling values failed: %w", err)
+			return sourcev1.HelmChartNotReady(chart, sourcev1.ChartPackageFailedReason, err.Error()), err
 		}
-		isValuesFileOverriden, err = helm.OverwriteChartDefaultValues(helmChart, valuesData)
+
+		isValuesFileOverriden, err = helm.OverwriteChartDefaultValues(helmChart, yamlBytes)
 		if err != nil {
 			return sourcev1.HelmChartNotReady(chart, sourcev1.ChartPackageFailedReason, err.Error()), err
 		}

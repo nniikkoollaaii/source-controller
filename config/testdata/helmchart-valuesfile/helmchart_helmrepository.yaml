@@ -9,3 +9,5 @@ spec:
     name: podinfo
   chart: podinfo
   valuesFile: values-prod.yaml
+  valuesFiles:
+    - values-prod.yaml

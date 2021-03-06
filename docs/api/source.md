@@ -528,6 +528,19 @@ Kubernetes meta/v1.Duration
 </tr>
 <tr>
 <td>
+<code>valuesFiles</code><br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Alternative list of values files to use as the default chart values,
+expected to be a relative path in the SourceRef. Ignored when omitted.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>valuesFile</code><br>
 <em>
 string
@@ -535,8 +548,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Alternative values file to use as the default chart values, expected to be a
-relative path in the SourceRef. Ignored when omitted.</p>
+<p>Alternative single values file to use as the default chart values, expected
+to be a relative path in the SourceRef. Ignored when omitted. Deprecated.</p>
 </td>
 </tr>
 <tr>
@@ -1453,6 +1466,19 @@ Kubernetes meta/v1.Duration
 </tr>
 <tr>
 <td>
+<code>valuesFiles</code><br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Alternative list of values files to use as the default chart values,
+expected to be a relative path in the SourceRef. Ignored when omitted.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>valuesFile</code><br>
 <em>
 string
@@ -1460,8 +1486,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Alternative values file to use as the default chart values, expected to be a
-relative path in the SourceRef. Ignored when omitted.</p>
+<p>Alternative single values file to use as the default chart values, expected
+to be a relative path in the SourceRef. Ignored when omitted. Deprecated.</p>
 </td>
 </tr>
 <tr>

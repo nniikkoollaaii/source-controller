@@ -9,3 +9,5 @@ spec:
     name: podinfo
   chart: charts/podinfo
   valuesFile: charts/podinfo/values-prod.yaml
+  valuesFiles:
+    - charts/podinfo/values-prod.yaml
