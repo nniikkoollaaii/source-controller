@@ -37,6 +37,12 @@ type HelmChartSpec struct {
 	// +optional
 	Version string `json:"version,omitempty"`
 
+	// Reconcile the chart if the version has not changed. Works only for charts
+	// from GitRepository and Bucket sources. Defaults to false when omitted.
+	// +kubebuilder:default:=false
+	// +optional
+	IgnoreVersion bool `json:"ignoreVersion,omitempty"`
+
 	// The reference to the Source the chart is available at.
 	// +required
 	SourceRef LocalHelmChartSourceReference `json:"sourceRef"`
