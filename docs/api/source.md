@@ -502,6 +502,19 @@ and Bucket sources. Defaults to latest when omitted.</p>
 </tr>
 <tr>
 <td>
+<code>ignoreVersion</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Reconcile the chart if the version has not changed. Works only for charts
+from GitRepository and Bucket sources. Defaults to false when omitted.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>sourceRef</code><br>
 <em>
 <a href="#source.toolkit.fluxcd.io/v1beta1.LocalHelmChartSourceReference">
@@ -1436,6 +1449,19 @@ string
 <em>(Optional)</em>
 <p>The chart version semver expression, ignored for charts from GitRepository
 and Bucket sources. Defaults to latest when omitted.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ignoreVersion</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Reconcile the chart if the version has not changed. Works only for charts
+from GitRepository and Bucket sources. Defaults to false when omitted.</p>
 </td>
 </tr>
 <tr>

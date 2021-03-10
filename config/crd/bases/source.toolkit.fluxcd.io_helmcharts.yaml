@@ -62,6 +62,12 @@ spec:
                 description: The name or path the Helm chart is available at in the
                   SourceRef.
                 type: string
+              ignoreVersion:
+                default: false
+                description: Reconcile the chart if the version has not changed. Works
+                  only for charts from GitRepository and Bucket sources. Defaults
+                  to false when omitted.
+                type: boolean
               interval:
                 description: The interval at which to check the Source for updates.
                 type: string
