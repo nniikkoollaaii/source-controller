@@ -541,6 +541,20 @@ relative path in the SourceRef. Ignored when omitted.</p>
 </tr>
 <tr>
 <td>
+<code>ignoreVersion</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Ignore the version of the chart, allowing reconciliation if the source has
+changed. Only applies to GitRepository and Bucket sources. Defaults to false
+when omitted.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>suspend</code><br>
 <em>
 bool
@@ -1462,6 +1476,20 @@ string
 <em>(Optional)</em>
 <p>Alternative values file to use as the default chart values, expected to be a
 relative path in the SourceRef. Ignored when omitted.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ignoreVersion</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Ignore the version of the chart, allowing reconciliation if the source has
+changed. Only applies to GitRepository and Bucket sources. Defaults to false
+when omitted.</p>
 </td>
 </tr>
 <tr>
