@@ -147,6 +147,76 @@ var _ = Describe("HelmChartReconciler", func() {
 					!storage.ArtifactExist(*got.Status.Artifact)
 			}, timeout, interval).Should(BeTrue())
 
+			When("Setting valid valuesFile attribute", func() {
+				updated := &sourcev1.HelmChart{}
+				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
+				updated.Spec.ValuesFile = "./override.yaml"
+				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
+				got := &sourcev1.HelmChart{}
+				Eventually(func() bool {
+					_ = k8sClient.Get(context.Background(), key, got)
+
+					//load generated helm chart with overriden values.yaml
+					helmChart, err := loader.Load(storage.LocalPath(*got.Status.Artifact))
+					Expect(err).NotTo(HaveOccurred())
+					_, exists := helmChart.Values["testvalue"]
+
+					return got.Status.Artifact != nil &&
+						storage.ArtifactExist(*got.Status.Artifact) &&
+						//check overriden value from override.yaml is applied
+						helmChart.Values["replicaCount"].(float64) == 3 &&
+						//check testvalue is not set
+						!exists
+				}, timeout, interval).Should(BeTrue())
+			})
+
+			When("Setting valid valuesFiles attribute", func() {
+				updated := &sourcev1.HelmChart{}
+				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
+				updated.Spec.ValuesFiles = []string{
+					"./values.yaml",
+					"./override.yaml",
+				}
+				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
+				got := &sourcev1.HelmChart{}
+				Eventually(func() bool {
+					_ = k8sClient.Get(context.Background(), key, got)
+
+					//load generated helm chart with overriden values.yaml
+					helmChart, err := loader.Load(storage.LocalPath(*got.Status.Artifact))
+					Expect(err).NotTo(HaveOccurred())
+
+					return got.Status.Artifact != nil &&
+						storage.ArtifactExist(*got.Status.Artifact) &&
+						//check overriden value from override.yaml is applied
+						helmChart.Values["replicaCount"].(float64) == 3
+				}, timeout, interval).Should(BeTrue())
+			})
+
+			When("Setting invalid valuesFile attribute", func() {
+				updated := &sourcev1.HelmChart{}
+				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
+				updated.Spec.ValuesFile = "invalid.yaml"
+				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
+				got := &sourcev1.HelmChart{}
+				Eventually(func() bool {
+					_ = k8sClient.Get(context.Background(), key, got)
+					return got.Status.Artifact != nil && got.Status.Artifact.Revision == updated.Status.Artifact.Revision
+				}, timeout, interval).Should(BeTrue())
+			})
+
+			When("Setting invalid valuesFiles attribute", func() {
+				updated := &sourcev1.HelmChart{}
+				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
+				updated.Spec.ValuesFiles = []string{"invalid.yaml"}
+				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
+				got := &sourcev1.HelmChart{}
+				Eventually(func() bool {
+					_ = k8sClient.Get(context.Background(), key, got)
+					return got.Status.Artifact != nil && got.Status.Artifact.Revision == updated.Status.Artifact.Revision
+				}, timeout, interval).Should(BeTrue())
+			})
+
 			By("Expecting missing HelmRepository error")
 			updated := &sourcev1.HelmChart{}
 			Expect(k8sClient.Get(context.Background(), key, updated)).Should(Succeed())
@@ -694,26 +764,56 @@ var _ = Describe("HelmChartReconciler", func() {
 					storage.ArtifactExist(*got.Status.Artifact)
 			}, timeout, interval).Should(BeTrue())
 
+			When("Setting valid valuesFile attribute", func() {
+				updated := &sourcev1.HelmChart{}
+				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
+				updated.Spec.ValuesFile = "./override.yaml"
+				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
+				got := &sourcev1.HelmChart{}
+				Eventually(func() bool {
+					_ = k8sClient.Get(context.Background(), key, got)
+
+					//load generated helm chart with overriden values.yaml
+					helmChart, err := loader.Load(storage.LocalPath(*got.Status.Artifact))
+					Expect(err).NotTo(HaveOccurred())
+					_, exists := helmChart.Values["testvalue"]
+
+					return got.Status.Artifact != nil &&
+						storage.ArtifactExist(*got.Status.Artifact) &&
+						//check overriden value from override.yaml is applied
+						helmChart.Values["replicaCount"].(float64) == 3 &&
+						//check testvalue is not set
+						!exists
+				}, timeout, interval).Should(BeTrue())
+			})
+
 			When("Setting valid valuesFiles attribute", func() {
 				updated := &sourcev1.HelmChart{}
 				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFiles = []string{
-					"./charts/helmchart/values.yaml",
-					"./charts/helmchart/override.yaml",
+				updated.Spec.ValuesFiles = []string{
+					"./values.yaml",
+					"./override.yaml",
 				}
 				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
 				got := &sourcev1.HelmChart{}
 				Eventually(func() bool {
 					_ = k8sClient.Get(context.Background(), key, got)
+
+					//load generated helm chart with overriden values.yaml
+					helmChart, err := loader.Load(storage.LocalPath(*got.Status.Artifact))
+					Expect(err).NotTo(HaveOccurred())
+
 					return got.Status.Artifact != nil &&
-						storage.ArtifactExist(*got.Status.Artifact)
+						storage.ArtifactExist(*got.Status.Artifact) &&
+						//check overriden value from override.yaml is applied
+						helmChart.Values["replicaCount"].(float64) == 3
 				}, timeout, interval).Should(BeTrue())
 			})
 
-			When("Setting invalid valuesFiles attribute", func() {
+			When("Setting invalid valuesFile attribute", func() {
 				updated := &sourcev1.HelmChart{}
 				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFiles = []string{"invalid.yaml"}
+				updated.Spec.ValuesFile = "invalid.yaml"
 				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
 				got := &sourcev1.HelmChart{}
 				Eventually(func() bool {
@@ -722,23 +822,10 @@ var _ = Describe("HelmChartReconciler", func() {
 				}, timeout, interval).Should(BeTrue())
 			})
 
-			When("Setting valid valuesFile attribute", func() {
+			When("Setting invalid valuesFiles attribute", func() {
 				updated := &sourcev1.HelmChart{}
 				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFile = "./charts/helmchart/override.yaml"
-				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
-				got := &sourcev1.HelmChart{}
-				Eventually(func() bool {
-					_ = k8sClient.Get(context.Background(), key, got)
-					return got.Status.Artifact != nil &&
-						storage.ArtifactExist(*got.Status.Artifact)
-				}, timeout, interval).Should(BeTrue())
-			})
-
-			When("Setting invalid valuesFile attribute", func() {
-				updated := &sourcev1.HelmChart{}
-				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFile = "invalid.yaml"
+				updated.Spec.ValuesFiles = []string{"invalid.yaml"}
 				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
 				got := &sourcev1.HelmChart{}
 				Eventually(func() bool {
@@ -990,26 +1077,56 @@ var _ = Describe("HelmChartReconciler", func() {
 					storage.ArtifactExist(*got.Status.Artifact)
 			}, timeout, interval).Should(BeTrue())
 
+			When("Setting valid valuesFile attribute", func() {
+				updated := &sourcev1.HelmChart{}
+				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
+				updated.Spec.ValuesFile = "./override.yaml"
+				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
+				got := &sourcev1.HelmChart{}
+				Eventually(func() bool {
+					_ = k8sClient.Get(context.Background(), key, got)
+
+					//load generated helm chart with overriden values.yaml
+					helmChart, err := loader.Load(storage.LocalPath(*got.Status.Artifact))
+					Expect(err).NotTo(HaveOccurred())
+					_, exists := helmChart.Values["testvalue"]
+
+					return got.Status.Artifact != nil &&
+						storage.ArtifactExist(*got.Status.Artifact) &&
+						//check overriden value from override.yaml is applied
+						helmChart.Values["replicaCount"].(float64) == 3 &&
+						//check testvalue is not set
+						!exists
+				}, timeout, interval).Should(BeTrue())
+			})
+
 			When("Setting valid valuesFiles attribute", func() {
 				updated := &sourcev1.HelmChart{}
 				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFiles = []string{
-					"values.yaml",
-					"override.yaml",
+				updated.Spec.ValuesFiles = []string{
+					"./values.yaml",
+					"./override.yaml",
 				}
 				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
 				got := &sourcev1.HelmChart{}
 				Eventually(func() bool {
 					_ = k8sClient.Get(context.Background(), key, got)
+
+					//load generated helm chart with overriden values.yaml
+					helmChart, err := loader.Load(storage.LocalPath(*got.Status.Artifact))
+					Expect(err).NotTo(HaveOccurred())
+
 					return got.Status.Artifact != nil &&
-						storage.ArtifactExist(*got.Status.Artifact)
+						storage.ArtifactExist(*got.Status.Artifact) &&
+						//check overriden value from override.yaml is applied
+						helmChart.Values["replicaCount"].(float64) == 3
 				}, timeout, interval).Should(BeTrue())
 			})
 
-			When("Setting invalid valuesFiles attribute", func() {
+			When("Setting invalid valuesFile attribute", func() {
 				updated := &sourcev1.HelmChart{}
 				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFiles = []string{"./charts/helmchart/override.yaml"}
+				updated.Spec.ValuesFile = "./charts/helmchart/override.yaml"
 				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
 				got := &sourcev1.HelmChart{}
 				Eventually(func() bool {
@@ -1018,23 +1135,10 @@ var _ = Describe("HelmChartReconciler", func() {
 				}, timeout, interval).Should(BeTrue())
 			})
 
-			When("Setting valid valuesFile attribute", func() {
+			When("Setting invalid valuesFiles attribute", func() {
 				updated := &sourcev1.HelmChart{}
 				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFile = "override.yaml"
-				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
-				got := &sourcev1.HelmChart{}
-				Eventually(func() bool {
-					_ = k8sClient.Get(context.Background(), key, got)
-					return got.Status.Artifact != nil &&
-						storage.ArtifactExist(*got.Status.Artifact)
-				}, timeout, interval).Should(BeTrue())
-			})
-
-			When("Setting invalid valuesFile attribute", func() {
-				updated := &sourcev1.HelmChart{}
-				Expect(k8sClient.Get(context.Background(), key, updated)).To(Succeed())
-				chart.Spec.ValuesFile = "./charts/helmchart/override.yaml"
+				updated.Spec.ValuesFiles = []string{"./charts/helmchart/override.yaml"}
 				Expect(k8sClient.Update(context.Background(), updated)).To(Succeed())
 				got := &sourcev1.HelmChart{}
 				Eventually(func() bool {

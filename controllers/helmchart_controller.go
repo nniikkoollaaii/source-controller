@@ -393,13 +393,15 @@ func (r *HelmChartReconciler) reconcileFromHelmRepository(ctx context.Context,
 			return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
 		}
 
-		// Prepend a list of valuesFiles with the deprecated ValuesFile.
+		// Prepend a list of valuesFiles with the deprecated ValuesFile key.
 		if chart.Spec.ValuesFile != "" {
 			valuesFiles = append(valuesFiles, chart.Spec.ValuesFile)
 		}
 		valuesFiles = append(valuesFiles, chart.Spec.ValuesFiles...)
 
 		for _, v := range valuesFiles {
+
+			// Find override file and retrieve contents
 			var valuesData []byte
 			cfn := filepath.Clean(v)
 			for _, f := range helmChart.Files {
@@ -407,6 +409,10 @@ func (r *HelmChartReconciler) reconcileFromHelmRepository(ctx context.Context,
 					valuesData = f.Data
 					break
 				}
+			}
+			if valuesData == nil {
+				err = fmt.Errorf("invalid values file path: %s", v)
+				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
 			}
 
 			yamlMap := make(map[string]interface{})
@@ -539,25 +545,25 @@ func (r *HelmChartReconciler) reconcileFromTarballArtifact(ctx context.Context,
 		var valuesFiles []string
 		var valuesMap map[string]interface{}
 
-		// Prepend a list of valuesFiles with the deprecated ValuesFile.
+		// Prepend a list of valuesFiles with the deprecated ValuesFile key.
 		if chart.Spec.ValuesFile != "" {
 			valuesFiles = append(valuesFiles, chart.Spec.ValuesFile)
 		}
 		valuesFiles = append(valuesFiles, chart.Spec.ValuesFiles...)
 
 		for _, v := range valuesFiles {
-			srcPath, err := securejoin.SecureJoin(tmpDir, v)
-			if err != nil {
-				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
-			}
-			if f, err := os.Stat(srcPath); os.IsNotExist(err) || !f.Mode().IsRegular() {
-				err = fmt.Errorf("invalid values file path: %s", v)
-				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
-			}
 
-			valuesData, err := ioutil.ReadFile(srcPath)
-			if err != nil {
-				err = fmt.Errorf("failed to read from values file '%s': %w", v, err)
+			// Find override file and retrieve contents
+			var valuesData []byte
+			cfn := filepath.Clean(v)
+			for _, f := range helmChart.Files {
+				if f.Name == cfn {
+					valuesData = f.Data
+					break
+				}
+			}
+			if valuesData == nil {
+				err = fmt.Errorf("invalid values file path: %s", v)
 				return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
 			}
 
