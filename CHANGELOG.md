@@ -2,6 +2,62 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.11.0
+
+**Release date:** 2021-03-31
+
+This prerelease comes with support for
+[Git submodules](https://github.com/fluxcd/source-controller/blob/api/v0.11.0/docs/spec/v1beta1/gitrepositories.md#git-submodules)
+and [self-signed TLS certs](https://github.com/fluxcd/source-controller/blob/api/v0.11.0/docs/spec/v1beta1/gitrepositories.md#https-self-signed-certificates)
+when using `gitProvider: go-git`.
+
+Features:
+* Add support for Git submodules with go-git
+  [#327](https://github.com/fluxcd/source-controller/pull/327)
+* Enable self-signed certs for go-git
+  [#324](https://github.com/fluxcd/source-controller/pull/324)
+
+Improvements:
+* Add well-known CI configs to exclusion list
+  [#329](https://github.com/fluxcd/source-controller/pull/329)
+
+## 0.10.0
+
+**Release date:** 2021-03-26
+
+This is the tenth MINOR prerelease.
+
+This prerelease comes with a breaking change to the leader election ID
+from `305740c0.fluxcd.io` to `source-controller-leader-election`
+to be more descriptive. This change should not have an impact on most
+installations, as the default replica count is `1`. If you are running
+a setup with multiple replicas, it is however advised to scale down
+before  upgrading.
+
+The suspended status of resources is now recorded to a
+`gotk_suspend_status` Prometheus gauge metric.
+
+Improvements:
+* Record suspend metrics in controllers
+  [#311](https://github.com/fluxcd/source-controller/pull/311)
+* Set leader election deadline to 30s
+  [#318](https://github.com/fluxcd/notification-controller/pull/318)
+* Change leader election ID to be more descriptive
+  [#319](https://github.com/fluxcd/notification-controller/pull/319)
+
+## 0.9.1
+
+**Release date:** 2021-03-15
+
+This prerelease comes with improvements to Git clone errors and
+patch updates to dependencies.
+
+Improvements:
+* Tidy git clone errors
+  [#304](https://github.com/fluxcd/source-controller/pull/304)
+* Update dependencies
+  [#307](https://github.com/fluxcd/source-controller/pull/307)
+
 ## 0.9.0
 
 **Release date:** 2021-02-23

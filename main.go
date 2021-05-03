@@ -36,6 +36,7 @@ import (
 
 	"github.com/fluxcd/pkg/runtime/client"
 	"github.com/fluxcd/pkg/runtime/events"
+	"github.com/fluxcd/pkg/runtime/leaderelection"
 	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/fluxcd/pkg/runtime/metrics"
 	"github.com/fluxcd/pkg/runtime/pprof"
@@ -45,6 +46,8 @@ import (
 	"github.com/fluxcd/source-controller/controllers"
 	// +kubebuilder:scaffold:imports
 )
+
+const controllerName = "source-controller"
 
 var (
 	scheme   = runtime.NewScheme()
@@ -66,17 +69,17 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr          string
-		eventsAddr           string
-		healthAddr           string
-		enableLeaderElection bool
-		storagePath          string
-		storageAddr          string
-		storageAdvAddr       string
-		concurrent           int
-		watchAllNamespaces   bool
-		clientOptions        client.Options
-		logOptions           logger.Options
+		metricsAddr           string
+		eventsAddr            string
+		healthAddr            string
+		storagePath           string
+		storageAddr           string
+		storageAdvAddr        string
+		concurrent            int
+		watchAllNamespaces    bool
+		clientOptions         client.Options
+		logOptions            logger.Options
+		leaderElectionOptions leaderelection.Options
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-addr", envOrDefault("METRICS_ADDR", ":8080"),
@@ -84,9 +87,6 @@ func main() {
 	flag.StringVar(&eventsAddr, "events-addr", envOrDefault("EVENTS_ADDR", ""),
 		"The address of the events receiver.")
 	flag.StringVar(&healthAddr, "health-addr", ":9440", "The address the health endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&storagePath, "storage-path", envOrDefault("STORAGE_PATH", ""),
 		"The local storage path.")
 	flag.StringVar(&storageAddr, "storage-addr", envOrDefault("STORAGE_ADDR", ":9090"),
@@ -96,17 +96,16 @@ func main() {
 	flag.IntVar(&concurrent, "concurrent", 2, "The number of concurrent reconciles per controller.")
 	flag.BoolVar(&watchAllNamespaces, "watch-all-namespaces", true,
 		"Watch for custom resources in all namespaces, if set to false it will only watch the runtime namespace.")
-	flag.Bool("log-json", false, "Set logging to JSON format.")
-	flag.CommandLine.MarkDeprecated("log-json", "Please use --log-encoding=json instead.")
 	clientOptions.BindFlags(flag.CommandLine)
 	logOptions.BindFlags(flag.CommandLine)
+	leaderElectionOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(logger.NewLogger(logOptions))
 
 	var eventRecorder *events.Recorder
 	if eventsAddr != "" {
-		if er, err := events.NewRecorder(eventsAddr, "source-controller"); err != nil {
+		if er, err := events.NewRecorder(eventsAddr, controllerName); err != nil {
 			setupLog.Error(err, "unable to create event recorder")
 			os.Exit(1)
 		} else {
@@ -124,14 +123,18 @@ func main() {
 
 	restConfig := client.GetConfigOrDie(clientOptions)
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		HealthProbeBindAddress: healthAddr,
-		Port:                   9443,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "305740c0.fluxcd.io",
-		Namespace:              watchNamespace,
-		Logger:                 ctrl.Log,
+		Scheme:                        scheme,
+		MetricsBindAddress:            metricsAddr,
+		HealthProbeBindAddress:        healthAddr,
+		Port:                          9443,
+		LeaderElection:                leaderElectionOptions.Enable,
+		LeaderElectionReleaseOnCancel: leaderElectionOptions.ReleaseOnCancel,
+		LeaseDuration:                 &leaderElectionOptions.LeaseDuration,
+		RenewDeadline:                 &leaderElectionOptions.RenewDeadline,
+		RetryPeriod:                   &leaderElectionOptions.RetryPeriod,
+		LeaderElectionID:              fmt.Sprintf("%s-leader-election", controllerName),
+		Namespace:                     watchNamespace,
+		Logger:                        ctrl.Log,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -150,7 +153,7 @@ func main() {
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Storage:               storage,
-		EventRecorder:         mgr.GetEventRecorderFor("source-controller"),
+		EventRecorder:         mgr.GetEventRecorderFor(controllerName),
 		ExternalEventRecorder: eventRecorder,
 		MetricsRecorder:       metricsRecorder,
 	}).SetupWithManagerAndOptions(mgr, controllers.GitRepositoryReconcilerOptions{
@@ -164,7 +167,7 @@ func main() {
 		Scheme:                mgr.GetScheme(),
 		Storage:               storage,
 		Getters:               getters,
-		EventRecorder:         mgr.GetEventRecorderFor("source-controller"),
+		EventRecorder:         mgr.GetEventRecorderFor(controllerName),
 		ExternalEventRecorder: eventRecorder,
 		MetricsRecorder:       metricsRecorder,
 	}).SetupWithManagerAndOptions(mgr, controllers.HelmRepositoryReconcilerOptions{
@@ -178,7 +181,7 @@ func main() {
 		Scheme:                mgr.GetScheme(),
 		Storage:               storage,
 		Getters:               getters,
-		EventRecorder:         mgr.GetEventRecorderFor("source-controller"),
+		EventRecorder:         mgr.GetEventRecorderFor(controllerName),
 		ExternalEventRecorder: eventRecorder,
 		MetricsRecorder:       metricsRecorder,
 	}).SetupWithManagerAndOptions(mgr, controllers.HelmChartReconcilerOptions{
@@ -191,7 +194,7 @@ func main() {
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Storage:               storage,
-		EventRecorder:         mgr.GetEventRecorderFor("source-controller"),
+		EventRecorder:         mgr.GetEventRecorderFor(controllerName),
 		ExternalEventRecorder: eventRecorder,
 		MetricsRecorder:       metricsRecorder,
 	}).SetupWithManagerAndOptions(mgr, controllers.BucketReconcilerOptions{

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -45,6 +46,7 @@ import (
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta1"
 	"github.com/fluxcd/source-controller/pkg/git"
 	"github.com/fluxcd/source-controller/pkg/git/strategy"
+	"github.com/fluxcd/source-controller/pkg/sourceignore"
 )
 
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=gitrepositories,verbs=get;list;watch;create;update;patch;delete
@@ -86,6 +88,9 @@ func (r *GitRepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err := r.Get(ctx, req.NamespacedName, &repository); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	// Record suspended status metric
+	defer r.recordSuspension(ctx, repository)
 
 	// Add our finalizer if it does not exist
 	if !controllerutil.ContainsFinalizer(&repository, sourcev1.SourceFinalizer) {
@@ -180,7 +185,12 @@ func (r *GitRepositoryReconciler) reconcile(ctx context.Context, repository sour
 	// determine auth method
 	auth := &git.Auth{}
 	if repository.Spec.SecretRef != nil {
-		authStrategy, err := strategy.AuthSecretStrategyForURL(repository.Spec.URL, repository.Spec.GitImplementation)
+		authStrategy, err := strategy.AuthSecretStrategyForURL(
+			repository.Spec.URL,
+			git.CheckoutOptions{
+				GitImplementation: repository.Spec.GitImplementation,
+				RecurseSubmodules: repository.Spec.RecurseSubmodules,
+			})
 		if err != nil {
 			return sourcev1.GitRepositoryNotReady(repository, sourcev1.AuthenticationFailedReason, err.Error()), err
 		}
@@ -204,7 +214,12 @@ func (r *GitRepositoryReconciler) reconcile(ctx context.Context, repository sour
 		}
 	}
 
-	checkoutStrategy, err := strategy.CheckoutStrategyForRef(repository.Spec.Reference, repository.Spec.GitImplementation)
+	checkoutStrategy, err := strategy.CheckoutStrategyForRef(
+		repository.Spec.Reference,
+		git.CheckoutOptions{
+			GitImplementation: repository.Spec.GitImplementation,
+			RecurseSubmodules: repository.Spec.RecurseSubmodules,
+		})
 	if err != nil {
 		return sourcev1.GitRepositoryNotReady(repository, sourcev1.GitOperationFailedReason, err.Error()), err
 	}
@@ -257,7 +272,15 @@ func (r *GitRepositoryReconciler) reconcile(ctx context.Context, repository sour
 	defer unlock()
 
 	// archive artifact and check integrity
-	if err := r.Storage.Archive(&artifact, tmpGit, repository.Spec.Ignore); err != nil {
+	ps, err := sourceignore.LoadIgnorePatterns(tmpGit, nil)
+	if err != nil {
+		err = fmt.Errorf(".sourceignore error: %w", err)
+		return sourcev1.GitRepositoryNotReady(repository, sourcev1.StorageOperationFailedReason, err.Error()), err
+	}
+	if repository.Spec.Ignore != nil {
+		ps = append(ps, sourceignore.ReadPatterns(strings.NewReader(*repository.Spec.Ignore), nil)...)
+	}
+	if err := r.Storage.Archive(&artifact, tmpGit, SourceIgnoreFilter(ps, nil)); err != nil {
 		err = fmt.Errorf("storage archive error: %w", err)
 		return sourcev1.GitRepositoryNotReady(repository, sourcev1.StorageOperationFailedReason, err.Error()), err
 	}
@@ -361,6 +384,25 @@ func (r *GitRepositoryReconciler) recordReadiness(ctx context.Context, repositor
 			Type:   meta.ReadyCondition,
 			Status: metav1.ConditionUnknown,
 		}, !repository.DeletionTimestamp.IsZero())
+	}
+}
+
+func (r *GitRepositoryReconciler) recordSuspension(ctx context.Context, gitrepository sourcev1.GitRepository) {
+	if r.MetricsRecorder == nil {
+		return
+	}
+	log := logr.FromContext(ctx)
+
+	objRef, err := reference.GetReference(r.Scheme, &gitrepository)
+	if err != nil {
+		log.Error(err, "unable to record suspended metric")
+		return
+	}
+
+	if !gitrepository.DeletionTimestamp.IsZero() {
+		r.MetricsRecorder.RecordSuspend(*objRef, false)
+	} else {
+		r.MetricsRecorder.RecordSuspend(*objRef, gitrepository.Spec.Suspend)
 	}
 }
 

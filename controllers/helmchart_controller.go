@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/go-logr/logr"
 	helmchart "helm.sh/helm/v3/pkg/chart"
@@ -122,6 +123,9 @@ func (r *HelmChartReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.Get(ctx, req.NamespacedName, &chart); err != nil {
 		return ctrl.Result{Requeue: true}, client.IgnoreNotFound(err)
 	}
+
+	// Record suspended status metric
+	defer r.recordSuspension(ctx, chart)
 
 	// Add our finalizer if it does not exist
 	if !controllerutil.ContainsFinalizer(&chart, sourcev1.SourceFinalizer) {
@@ -490,15 +494,23 @@ func (r *HelmChartReconciler) reconcileFromTarballArtifact(ctx context.Context,
 		return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
 	}
 
-	version := helmChart.Metadata.Version
-	// Uses GitRepository or Bucket revision if ignoring Chart.yaml version
+	version, err := semver.NewVersion(helmChart.Metadata.Version)
+	if err != nil {
+		err = fmt.Errorf("load chart error: %w", err)
+		return sourcev1.HelmChartNotReady(chart, sourcev1.StorageOperationFailedReason, err.Error()), err
+	}
+	// Replace / with - in version metadata for SemVer spec
+	version.SetMetadata(strings.Replace(artifact.Revision, "/", "-", -1))
+	helmChart.Metadata.Version = version.String()
+
+	revision := version.Original()
 	if chart.Spec.IgnoreVersion {
-		version = artifact.Revision
+		revision = version.String()
 	}
 
 	// Return early if the revision is still the same as the current chart artifact
-	newArtifact := r.Storage.NewArtifactFor(chart.Kind, chart.ObjectMeta.GetObjectMeta(), version,
-		fmt.Sprintf("%s-%s.tgz", helmChart.Metadata.Name, version))
+	newArtifact := r.Storage.NewArtifactFor(chart.Kind, chart.ObjectMeta.GetObjectMeta(), revision,
+		fmt.Sprintf("%s-%s.tgz", helmChart.Metadata.Name, revision))
 	if !force && apimeta.IsStatusConditionTrue(chart.Status.Conditions, meta.ReadyCondition) && chart.GetArtifact().HasRevision(newArtifact.Revision) {
 		if newArtifact.URL != artifact.URL {
 			r.Storage.SetArtifactURL(chart.GetArtifact())
@@ -944,4 +956,23 @@ func validHelmChartName(s string) error {
 		return fmt.Errorf("invalid chart name %q, a valid name must be lower case letters and numbers and MAY be separated with dashes (-)", s)
 	}
 	return nil
+}
+
+func (r *HelmChartReconciler) recordSuspension(ctx context.Context, chart sourcev1.HelmChart) {
+	if r.MetricsRecorder == nil {
+		return
+	}
+	log := logr.FromContext(ctx)
+
+	objRef, err := reference.GetReference(r.Scheme, &chart)
+	if err != nil {
+		log.Error(err, "unable to record suspended metric")
+		return
+	}
+
+	if !chart.DeletionTimestamp.IsZero() {
+		r.MetricsRecorder.RecordSuspend(*objRef, false)
+	} else {
+		r.MetricsRecorder.RecordSuspend(*objRef, chart.Spec.Suspend)
+	}
 }

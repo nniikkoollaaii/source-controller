@@ -57,6 +57,11 @@ type GitRepositorySpec struct {
 	// +kubebuilder:default:=go-git
 	// +optional
 	GitImplementation string `json:"gitImplementation,omitempty"`
+	
+	// When enabled, after the clone is created, initializes all submodules within.
+	// This option is available only when using the 'go-git' GitImplementation.
+	// +optional
+	RecurseSubmodules bool `json:"recurseSubmodules,omitempty"`
 }
 ```
 
@@ -144,9 +149,13 @@ gzip compressed TAR archive (`<commit hash>.tar.gz`).
 
 ### Excluding files
 
-Git files (`.git/`, `.gitignore`, `.gitmodules`, and `.gitattributes`) are
-excluded from the archive by default, as well as some extensions (`.jpg, .jpeg,
-.gif, .png, .wmv, .flv, .tar.gz, .zip`)
+The following files and extensions are excluded from the archive by default:
+
+- Git files (`.git/ ,.gitignore, .gitmodules, .gitattributes`)
+- File extensions (`.jpg, .jpeg, .gif, .png, .wmv, .flv, .tar.gz, .zip`)
+- CI configs (`.github/, .circleci/, .travis.yml, .gitlab-ci.yml, appveyor.yml, .drone.yml, cloudbuild.yaml, codeship-services.yml, codeship-steps.yml`)
+- CLI configs (`.goreleaser.yml, .sops.yaml`)  
+- Flux v1 config (`.flux.yaml`)
 
 Excluding additional files from the archive is possible by adding a
 `.sourceignore` file in the root of the repository. The `.sourceignore` file
@@ -194,10 +203,10 @@ and also impact the traffic costs.
 To be able to support Azure DevOps a compromise solution was built, giving the user the
 option to select the git library while accepting the drawbacks.
 
-| Git Implementation | Shallow Clones | V2 Protocol Support |
-|---|---|---|
-| 'go-git' | true | false |
-| 'libgit2' | false | true |
+| Git Implementation | Shallow Clones | Git Submodules | V2 Protocol Support |
+|---|---|---|---|
+| 'go-git' | true | true | false |
+| 'libgit2' | false | false | true |
 
 Pull the master branch from a repository in Azure DevOps.
 
@@ -318,7 +327,36 @@ data:
   password: <BASE64>
 ```
 
-> **Note:** that self-signed certificates are not supported.
+### HTTPS self-signed certificates
+
+Cloning over HTTPS from a Git repository with a self-signed certificate:
+
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1beta1
+kind: GitRepository
+metadata:
+  name: podinfo
+  namespace: default
+spec:
+  interval: 1m
+  url: https://customdomain.com/stefanprodan/podinfo
+  secretRef:
+    name: https-credentials
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: https-credentials
+  namespace: default
+type: Opaque
+data:
+  username: <BASE64>
+  password: <BASE64>
+  caFile: <BASE64>
+```
+
+It is also possible to specify a `caFile` for public repositories, in that case the username and password
+can be omitted.
 
 ### SSH authentication
 
@@ -405,22 +443,25 @@ kubectl create secret generic pgp-public-keys \
     --from-file=author2.asc
 ```
 
-## Self-signed certificates
+### Git submodules
 
-Cloning over HTTPS from a Git repository with a self-signed certificate:
+With `spec.recurseSubmodules` you can configure the controller to
+clone a specific branch including its Git submodules:
 
 ```yaml
 apiVersion: source.toolkit.fluxcd.io/v1beta1
 kind: GitRepository
 metadata:
-  name: podinfo
+  name: repo-with-submodules
   namespace: default
 spec:
   interval: 1m
-  url: https://customdomain.com/stefanprodan/podinfo
+  url: https://github.com/<organization>/<repository>
   secretRef:
     name: https-credentials
-  gitImplementation: libgit2
+  ref:
+    branch: main
+  recurseSubmodules: true
 ---
 apiVersion: v1
 kind: Secret
@@ -429,14 +470,14 @@ metadata:
   namespace: default
 type: Opaque
 data:
-  username: <BASE64>
-  password: <BASE64>
-  caFile: <BASE64>
+  username: <GitHub Username>
+  password: <GitHub Token>
 ```
 
-Note that the Git implementation has to be `libgit2` as `go-git` does not support custom CA verification.
-It is also possible to specify a `caFile` for public repositories, in that case the username and password
-can be omitted.
+Note that deploy keys can't be used to pull submodules from private repositories
+as GitHub and GitLab doesn't allow a deploy key to be reused across repositories.
+You have to use either HTTPS token-based authentication, or an SSH key belonging
+to a user that has access to the main repository and all its submodules.
 
 ## Status examples
 

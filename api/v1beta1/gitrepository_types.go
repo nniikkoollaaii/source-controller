@@ -81,6 +81,12 @@ type GitRepositorySpec struct {
 	// +kubebuilder:default:=go-git
 	// +optional
 	GitImplementation string `json:"gitImplementation,omitempty"`
+
+	// When enabled, after the clone is created, initializes all submodules within,
+	// using their default settings.
+	// This option is available only when using the 'go-git' GitImplementation.
+	// +optional
+	RecurseSubmodules bool `json:"recurseSubmodules,omitempty"`
 }
 
 // GitRepositoryRef defines the Git ref used for pull and checkout operations.
@@ -205,6 +211,7 @@ func (in *GitRepository) GetInterval() metav1.Duration {
 // +genclient
 // +genclient:Namespaced
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:shortName=gitrepo
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.url`
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""

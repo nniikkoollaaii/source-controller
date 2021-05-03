@@ -33,29 +33,30 @@ import (
 	"github.com/fluxcd/source-controller/pkg/git"
 )
 
-func CheckoutStrategyForRef(ref *sourcev1.GitRepositoryRef) git.CheckoutStrategy {
+func CheckoutStrategyForRef(ref *sourcev1.GitRepositoryRef, opt git.CheckoutOptions) git.CheckoutStrategy {
 	switch {
 	case ref == nil:
 		return &CheckoutBranch{branch: git.DefaultBranch}
 	case ref.SemVer != "":
-		return &CheckoutSemVer{semVer: ref.SemVer}
+		return &CheckoutSemVer{semVer: ref.SemVer, recurseSubmodules: opt.RecurseSubmodules}
 	case ref.Tag != "":
-		return &CheckoutTag{tag: ref.Tag}
+		return &CheckoutTag{tag: ref.Tag, recurseSubmodules: opt.RecurseSubmodules}
 	case ref.Commit != "":
-		strategy := &CheckoutCommit{branch: ref.Branch, commit: ref.Commit}
+		strategy := &CheckoutCommit{branch: ref.Branch, commit: ref.Commit, recurseSubmodules: opt.RecurseSubmodules}
 		if strategy.branch == "" {
 			strategy.branch = git.DefaultBranch
 		}
 		return strategy
 	case ref.Branch != "":
-		return &CheckoutBranch{branch: ref.Branch}
+		return &CheckoutBranch{branch: ref.Branch, recurseSubmodules: opt.RecurseSubmodules}
 	default:
 		return &CheckoutBranch{branch: git.DefaultBranch}
 	}
 }
 
 type CheckoutBranch struct {
-	branch string
+	branch            string
+	recurseSubmodules bool
 }
 
 func (c *CheckoutBranch) Checkout(ctx context.Context, path, url string, auth *git.Auth) (git.Commit, string, error) {
@@ -67,9 +68,10 @@ func (c *CheckoutBranch) Checkout(ctx context.Context, path, url string, auth *g
 		SingleBranch:      true,
 		NoCheckout:        false,
 		Depth:             1,
-		RecurseSubmodules: 0,
+		RecurseSubmodules: recurseSubmodules(c.recurseSubmodules),
 		Progress:          nil,
 		Tags:              extgogit.NoTags,
+		CABundle:          auth.CABundle,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to clone '%s', error: %w", url, gitutil.GoGitError(err))
@@ -86,7 +88,8 @@ func (c *CheckoutBranch) Checkout(ctx context.Context, path, url string, auth *g
 }
 
 type CheckoutTag struct {
-	tag string
+	tag               string
+	recurseSubmodules bool
 }
 
 func (c *CheckoutTag) Checkout(ctx context.Context, path, url string, auth *git.Auth) (git.Commit, string, error) {
@@ -98,9 +101,10 @@ func (c *CheckoutTag) Checkout(ctx context.Context, path, url string, auth *git.
 		SingleBranch:      true,
 		NoCheckout:        false,
 		Depth:             1,
-		RecurseSubmodules: 0,
+		RecurseSubmodules: recurseSubmodules(c.recurseSubmodules),
 		Progress:          nil,
 		Tags:              extgogit.NoTags,
+		CABundle:          auth.CABundle,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to clone '%s', error: %w", url, err)
@@ -117,8 +121,9 @@ func (c *CheckoutTag) Checkout(ctx context.Context, path, url string, auth *git.
 }
 
 type CheckoutCommit struct {
-	branch string
-	commit string
+	branch            string
+	commit            string
+	recurseSubmodules bool
 }
 
 func (c *CheckoutCommit) Checkout(ctx context.Context, path, url string, auth *git.Auth) (git.Commit, string, error) {
@@ -129,9 +134,10 @@ func (c *CheckoutCommit) Checkout(ctx context.Context, path, url string, auth *g
 		ReferenceName:     plumbing.NewBranchReferenceName(c.branch),
 		SingleBranch:      true,
 		NoCheckout:        false,
-		RecurseSubmodules: 0,
+		RecurseSubmodules: recurseSubmodules(c.recurseSubmodules),
 		Progress:          nil,
 		Tags:              extgogit.NoTags,
+		CABundle:          auth.CABundle,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to clone '%s', error: %w", url, err)
@@ -155,7 +161,8 @@ func (c *CheckoutCommit) Checkout(ctx context.Context, path, url string, auth *g
 }
 
 type CheckoutSemVer struct {
-	semVer string
+	semVer            string
+	recurseSubmodules bool
 }
 
 func (c *CheckoutSemVer) Checkout(ctx context.Context, path, url string, auth *git.Auth) (git.Commit, string, error) {
@@ -170,9 +177,10 @@ func (c *CheckoutSemVer) Checkout(ctx context.Context, path, url string, auth *g
 		RemoteName:        git.DefaultOrigin,
 		NoCheckout:        false,
 		Depth:             1,
-		RecurseSubmodules: 0,
+		RecurseSubmodules: recurseSubmodules(c.recurseSubmodules),
 		Progress:          nil,
 		Tags:              extgogit.AllTags,
+		CABundle:          auth.CABundle,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to clone '%s', error: %w", url, err)
@@ -257,4 +265,11 @@ func (c *CheckoutSemVer) Checkout(ctx context.Context, path, url string, auth *g
 	}
 
 	return &Commit{commit}, fmt.Sprintf("%s/%s", t, head.Hash().String()), nil
+}
+
+func recurseSubmodules(recurse bool) extgogit.SubmoduleRescursivity {
+	if recurse {
+		return extgogit.DefaultSubmoduleRecursionDepth
+	}
+	return extgogit.NoRecurseSubmodules
 }
